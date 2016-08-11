@@ -42,7 +42,7 @@ python3 spider.py -u url -d deep -f logfile -l loglevel(1-5)  --testself -thread
 
 ---
  
-###hint###
+###Hint###
 1.使用re  urllib/urllib2  beautifulsoup/lxml2  threading optparse Queue  sqlite3 logger  doctest等模块
 
 2.注意是“线程池”而不仅仅是多线程
