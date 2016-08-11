@@ -2,7 +2,7 @@
 A spider coding test
 ---
 
-##Question##
+##题目##
 使用python编写一个网站爬虫程序，支持参数如下：
 <code>
 python3 spider.py -u url -d deep -f logfile -l loglevel(1-5)  --testself -thread number --dbfile  filepath  --key=”HTML5”
@@ -42,7 +42,7 @@ python3 spider.py -u url -d deep -f logfile -l loglevel(1-5)  --testself -thread
 
 ---
  
-###Hint###
+###提示###
 1.使用re  urllib/urllib2  beautifulsoup/lxml2  threading optparse Queue  sqlite3 logger  doctest等模块
 
 2.注意是“线程池”而不仅仅是多线程
