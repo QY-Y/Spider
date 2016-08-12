@@ -1,5 +1,6 @@
 # Spider
 A spider coding test
+
 ---
 
 ##题目##
@@ -51,10 +52,10 @@ python3 spider.py -u url -d deep -f logfile -l loglevel(1-5)  --testself -thread
 
 4.建议程序可分阶段，逐步完成编写，例如：
 
-	版本1:Spider1.py -u url -d deep
+版本1:Spider1.py -u url -d deep
 
-	版本2：Spider3.py -u url -d deep -f logfile -l loglevel(1-5)  --testself
+版本2：Spider3.py -u url -d deep -f logfile -l loglevel(1-5)  --testself
 
-	版本3：Spider3.py -u url -d deep -f logfile -l loglevel(1-5)  --testself -thread number
+版本3：Spider3.py -u url -d deep -f logfile -l loglevel(1-5)  --testself -thread number
 
-	版本4：剩下所有功能
+版本4：剩下所有功能
