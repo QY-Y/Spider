@@ -12,30 +12,51 @@ import getopt
 import logging
 import threading
 import signal
-import urllib
 import urllib2
 import traceback
 import curses
 import lxml.html
+import hashlib
+import gzip
+from StringIO import StringIO
 
-class NoneTypeError(Exception): pass
 
 IS_EXIT = False
 def handler(signum, frame):
 	global IS_EXIT
 	IS_EXIT = True
-	print "exiting..."
-	sys.exit()
+# Host: www.baidu.com
+# User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/48.0
+# Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+# Accept-Language: en-US,en;q=0.5
+# Accept-Encoding: gzip, deflate, br
+# Cookie: BAIDUID=53782338724485C9E25F994B5C4CF241:FG=1; BIDUPSID=53782338724485C9E25F994B5C4CF241; PSTM=1461994803; BD_UPN=133352; H_PS_PSSID=1462_17942_11598_20847_20857_20837_20771; H_PS_645EC=aceedZSUvnyvX0JXU8siUp6p87RynkqgVFCSJRLh5fsr1mAbFYAE6qGyEr4; BD_CK_SAM=1; BD_HOME=0; BDRCVFR[eHt_ClL0b_s]=mk3SLVN4HKm
+# Connection: keep-alive
+# Upgrade-Insecure-Requests: 1
+# Pragma: no-cache
+# Cache-Control: no-cache
 
 def _requestData(url):
 	req = urllib2.Request(url)
-	req.add_header('User-Agent','Mozilla/5.0 (Windows NT 6.2; rv:16.0) Gecko/20100101 Firefox/48.0')
+	req.add_header('User-Agent',
+		'Mozilla/5.0 (Windows NT 6.2; rv:16.0) Gecko/20100101 Firefox/48.0')
+	req.add_header('Accept-Encoding','gzip')
+	req.add_header('Accept-Language','en-US,en;q=0.5')
 	try:
-		res = urllib.urlopen(url).read()
+		res = urllib2.urlopen(url,timeout = 10)
+		content = res.read()
+		# try:
+			# content = content.decode('gb2312','ignore')
+		# except:
+			# content = content.decode('utf-8', 'ignore')
+		if res.info().get('Content-Encoding') == 'gzip':
+			buf = StringIO(content)
+			content = gzip.GzipFile(fileobj=buf).read()
+		return req.get_type(), req.get_host(), content
 	except Exception,e: 
-		logging.error('open['+url+']failed '+str(e))
-		return req.type, req.host, None
-	return req.get_type(), req.get_host(), res
+		logging.warning(' open['+url+'] failed '+str(e))
+		return req.get_type(), req.get_host(), False
+	
 
 def _initDB(dbFile):
 	'''init database file create table(if necessary)
@@ -58,190 +79,154 @@ def _initDB(dbFile):
 			logging.cratical(dbFile+'Error in creating table')
 	return db, c
 
-def _insert(url, key, content):
+def _insert(url, keyWord, content, savedCount):
 	'''insert info to defualt database
 	Args:
-		url: 
-		key: 
-		content: 
+		url: The url to be saved
+		keyWord: Key word
+		content: Data
 	'''
-	# try:
-	# 	content = content.decode('gbk')
-	# except UnicodeDecodeError:
-	# 	content = content.decode('utf8', 'ignore')
-	# 	logging.debug("["+url+'] unicode decode error,using utf-8')
-	# content = content.decode('ascii')
-	content = urllib.quote(str(content))
+	content = urllib2.quote(str(content))
 	try:
-		c.execute('insert into spider(url,key,content) values("'+url+'","'+key+'","'+content+'")')
+		c.execute('insert into spider(url,key,content) values("'
+				  +url+'","'+keyWord+'","'+content+'")')
 		db.commit()
+		savedCount.put(url)
 	except sqlite3.OperationalError:
-		logging.critical('insert ['+url+'] error')
+		logging.critical(' insert ['+url+'] error')
 
 
 class worker(threading.Thread):
-	def __init__(self, links, key, rlock):
+	def __init__(self, links, keys, rlock, urlset, md5set, savedCount):
 		threading.Thread.__init__(self)
-		self.queue = links
-		self.keyList = key
+		self.taskQueue = links
+		self.keyList = keys
 		self.rlock = rlock
 		self.link = None
 		self.depth = None
-		self.key = None
-		self.setDaemon(True)  
+		self.setDaemon(True) 
 		self.start()
-		# self.join()
 		self.exc_traceback = ''
-
+		self.urlset = urlset
+		self.md5set = md5set
+		self.count = 0
+		self.savedCount = savedCount
 
 	def run(self):
-		global URLS
 		while True:
 			try:
-				self.link, self.depth = self.queue.get(timeout=2)
-				self.key = self.keyList[0]
+				self.link, self.depth = self.taskQueue.get(timeout=2)
 			except Exception,e:
-				self.exc_traceback = ''.join(traceback.format_exception(*sys.exc_info()))
-				sys.exit()
+				logging.info("get task error")
 				break
-			if self.depth > 0:
-				self.depth -= 1
-				links = self.getLinks()
-				if links:
-					for i in links:
-						if i not in URLS:
-							URLS.add(i)
-							self.queue.put((i, self.depth))
-				self.queue.put((self.link, 0))
-			else:
-				self.download2DB()
-				logging.info(self.link+'  ['+str(self.depth)+']')
-			self.queue.task_done()
+			try:
+				reshost, restype, data = _requestData(self.link)
+				if not data:
+					self.taskQueue.task_done()
+					continue
+				self.count += 1
+				md5 = hashlib.md5(data).hexdigest()
+				if self.depth > 0:
+					self.depth -= 1
+					subLinks = self.getLinks(data, reshost, restype)
+				else:
+					subLinks = []
+				for subLink in subLinks:
+					if not (subLink[0] in self.urlset):
+						self.urlset.add((subLink[0]))
+						self.taskQueue.put(subLink)
+				if not (md5 in self.md5set):
+					self.save(data)
+					self.md5set.add(md5)
+			except Exception,e:
+				logging.critical(str(e))
+			self.taskQueue.task_done()
 
 
-	def download2DB(self):
-		data = _requestData(self.link)[2]
+	def save(self,data):
 		if not data:
 			return
-		try:
-			html = data.decode('gbk')
-		except UnicodeDecodeError:
-			html = data.decode('utf8', 'ignore')
-		if key in html: 
-			self.rlock.acquire()
-			_insert(self.link, self.key, data)
-			self.rlock.release()
+		for key in self.keyList:
+			if data.find(key)>0:
+				logging.info(" ["+key+"] found in ["+self.link+"]")
+				self.rlock.acquire()
+				_insert(self.link, key, data, self.savedCount)
+				self.rlock.release()
+				break
 
-	def getLinks(self):
-		resType, resHost, resData = _requestData(self.link)
-		if not resData:
-			raise NoneTypeError
-		try:
-			data = resData.decode('gbk')
-		except UnicodeDecodeError:
-			data = resData.decode('utf8', 'ignore')
+	def getLinks(self, data, resType, resHost):
+		if not data:
+			return []
 		host = resType+'://'+resHost
-		doc = lxml.html.document_fromstring(data)
+		try:
+			data = data.decode('utf8', 'ignore')
+			doc = lxml.html.document_fromstring(data)
+		except Exception,e:
+			logging.critical(str(e))
+		
 		tags = ['a', 'iframe', 'frame']
 		doc.make_links_absolute(host)
 		links = doc.iterlinks()
-		trueLinks = []
+		newLinks = []
+		absoluteLinks = []
 		for l in links:
 			if l[0].tag in tags:
-				trueLinks.append(l[2])
-		return trueLinks
-class showProgress(threading.Thread):
-	def __init__(self, QLinks, depth, event):
-		threading.Thread.__init__(self)
-		self.QLinks = QLinks
-		self.depth = depth
-		self.event = event
-		self.setDaemon(True)  
-		self.start()
-		self.join()
+				newLinks.append(l)
+		del links
+		for link in newLinks:
+			if re.match('http',link[2]):
+				absoluteLinks.append((link[2],self.depth))
+		return absoluteLinks
 
-	def run(self):
-		# if self.depth == 0:
-		# 	print 'level 1 :', 1, '/', 1
-		# 	return
-		# screen = curses.initscr()  
-		# maxFile = [0] * (self.depth+1)
-		while True:
-			print 'show code'
-			time.sleep(10)
-		# 	links = list(self.QLinks.__dict__['queue'])
-			
-		# 	depth = [x[1] for x in links]
-		# 	'''keys中元素是[deep值,次数]，
-		# 	deep=0为最里子层，deep=n-1为父层'''
-		# 	keys = [[x, 0] for x in range(self.deep+1)]
-		# 	n = len(keys)
-		# 	for d in depth:
-		# 		keys[d][1] += 1
-		# 	screen.clear()  
-		# 	count = 0
-		# 	for d in range(1, n+1):
-		# 		count += 1
-		# 		if keys[n-d][1] > maxFile[d-1]:
-		# 			maxFile[d-1] = keys[n-d][1]
-		# 		screen.addstr(count, 0, 'level ' + str(d) + ' : ' + 
-		# 			str(keys[n-d][1])+' / '+str(maxFile[d-1]))
-		# 	screen.refresh()  
-		# 	time.sleep(0.2)
-		# 	total = functools.reduce(lambda x, y: x + y,
-		# 							 [i[1] for i in keys])
-		# 	totalMax = functools.reduce(lambda x, y: x + y, maxFile)
-			if self.event.is_set():
-				curses.endwin()
-				line = 'Done at '+time.ctime()
-				print line
-				logging.info(line)
-				break
+
 class threadPool:
-	def __init__(self, num, event):
+	def __init__(self, num, event, url, depth, keyWords):
 		self.num = num
 		self.event = event
 		self.threads = []
-		self.queue = Queue.Queue()
-		self.key = [None]
-		self.createThread()
-
-	def createThread(self):
+		self.tasks = Queue.Queue()
+		self.tasks.put((url, depth))
+		self.key = keyWords
+		self.url = set()
+		self.url.add(url)
+		self.urlMD5 = set()
+		self.savedCount = Queue.Queue()
 		for i in range(self.num):
-			newThread = worker(self.queue, self.key, rlock)
-			newThread.setDaemon = True
+			newThread = worker(self.tasks, self.key, rlock, self.url, self.urlMD5, self.savedCount)
 			self.threads.append(newThread)
+		logging.info(" pool init done, " + str(self.num) + " woreker created")
 
-		logging.info(str(self.num) + " woreker created")
-	def putJob(self, job, key=None):
-		self.queue.put(job)
 
-		logging.info(str(job) + " job putted")
-		self.key[0] = key
+	def supervisor(self):
+		global IS_EXIT
+		while self.tasks.unfinished_tasks:
+			if IS_EXIT:
+				try:
+					self.tasks.empty()
+					self.event.set()
+				except Exception,e:
+					logging.critical(str(e))
+				return
+			width = 50
+			now = self.tasks.qsize()
+			total = len(self.url)
+			percent = (float(now)/float(total))
+			percent = int((1 - percent)*100)
+			printinfo = ('[%%-%ds' % width) % (width * percent / 100 * '=')
+			printinfo += '] ' + str(percent) + "%    "
+			printinfo += str(len(self.url) - self.tasks.qsize()) 
+			printinfo += '/' + str(len(self.url)) + '\r'
+			sys.stdout.write((len(printinfo)+5)*' '+'\r')
+  			sys.stdout.flush()
+			sys.stdout.write(printinfo)
+  			sys.stdout.flush()
+			time.sleep(1)
 
-	def getQueue(self):
-		return self.queue
-
-	def wait(self):
-		self.queue.join()
+		sys.stdout.write('\n')
+		print self.savedCount.qsize(),"pages saved. All tasks done at",time.ctime()
 		self.event.set()
 		return
-	def showThreads(self):
-		return self.threads
 
-def _dealSameFileName(name):
-	try:
-		files=os.listdir('.')
-	except:
-		logging.error('无法读取本目录下的文件')
-		exit()
-	count=1
-	while True:
-		if name in files:
-			name='.'.join([name,str(count)])
-			count+=1
-		else:
-			return name
 
 def _usage():
 	'''print usage'''
@@ -263,19 +248,13 @@ python spider.py -u [URL] -d [Depth] -f [Log File] -l [Level] --thread [Thread N
 def mainHandler(threadNum, url, depth, keyWord, test):
 	event = threading.Event()
 	event.clear()
-	pool = threadPool(threadNum, event)
-	# showProgress(pool.getQueue(), depth, event)
-	pool.putJob((url, depth), keyWord)
-	pool.wait()
+	pool = threadPool(num = threadNum, event = event, url = url, depth = depth, keyWords = keyWord)
+	pool.supervisor()
 	
-	# if test:  
-	# 	import test
-	# 	test.test(key, dbFile)
-
 
 if __name__ == '__main__':
-	reload(sys) 
-	sys.setdefaultencoding('UTF-8')
+	print time.ctime()
+	os.system("rm spider.db spider.log")
 	signal.signal(signal.SIGINT, handler)
 	signal.signal(signal.SIGTERM, handler)
 	rlock = threading.RLock()
@@ -285,7 +264,8 @@ if __name__ == '__main__':
 	level = 1
 	threadNum = 1
 	dbFile = 'spider.db'
-	key = '中国'  
+	# key = ['中国']
+	key = ['HTML5']  
 
 	optlist, args = getopt.getopt(
 		sys.argv[1:],
@@ -325,8 +305,5 @@ if __name__ == '__main__':
 	logging.basicConfig(filename=logFile, level=logLevel[level],
 						format='%(asctime)s-%(levelname)s-%(filename)s-'
 						'%(threadName)s-%(message)s', datefmt='[%d/%b/%Y %H:%M:%S]',)
-	depth -= 1
-	URLS = set()  
-	fileMD5 = set()  
 	testself = False
-	mainHandler(threadNum, url, depth, key, testself)
+	mainHandler(threadNum, url, depth-1, key, testself)
