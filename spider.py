@@ -58,11 +58,11 @@ def handler(signum, frame):
 
 
 def request_url(url):
-# Description : send request to url,return contentof response.
-# Output :
-#     req.get_type()
-#     req.get_host()
-#     content
+    # Description : send request to url,return contentof response.
+    # Output :
+    #     req.get_type()
+    #     req.get_host()
+    #     content
     req = urllib2.Request(url)
     req.add_header(
         'User-Agent',
@@ -82,7 +82,7 @@ def request_url(url):
 
 
 def argv_check(argvs):
-# Description : check user input, exit if illegal
+    # Description : check user input, exit if illegal
     if (not 0 < argvs['-l'] < 6):
         print '-l must be in [1,2,3,4,5]'
         sys.exit()
@@ -100,20 +100,28 @@ def argv_check(argvs):
 # Description : WORKER: search and save pages
 class WORKER(threading.Thread):
 
-    def __init__(self, links, keys, rlock, url_set, md5_set, database, saved_count):
+    def __init__(
+            self,
+            links,
+            keys,
+            rlock,
+            url_set,
+            md5_set,
+            database,
+            saved_count):
         threading.Thread.__init__(self)
-        self.task_queue=links
-        self.key_list=keys
-        self.rlock=rlock
-        self.link=None
-        self.depth=None
+        self.task_queue = links
+        self.key_list = keys
+        self.rlock = rlock
+        self.link = None
+        self.depth = None
         self.setDaemon(True)
         self.start()
-        self.url_set=url_set
-        self.md5_set=md5_set
-        self.count=0
-        self.database=database
-        self.saved_count=saved_count
+        self.url_set = url_set
+        self.md5_set = md5_set
+        self.count = 0
+        self.database = database
+        self.saved_count = saved_count
 
 #    Description : 1.get task from task queue.
 #                   2.get sub links
@@ -121,22 +129,23 @@ class WORKER(threading.Thread):
     def run(self):
         while True:
             try:
-                self.link, self.depth=self.task_queue.get(timeout=2)
+                self.link, self.depth = self.task_queue.get(timeout=2)
             except Exception as e:
                 logging.info("get task error")
                 break
             try:
-                res_host, res_type, data=request_url(self.link)
+                res_host, res_type, data = request_url(self.link)
                 if not data:
                     self.task_queue.task_done()
                     continue
                 self.count += 1
-                md5=hashlib.md5(data).hexdigest()
+                md5 = hashlib.md5(data).hexdigest()
                 if self.depth > 0:
                     self.depth -= 1
-                    sub_link_list=self.get_sub_links(data, res_host, res_type)
+                    sub_link_list = self.get_sub_links(
+                        data, res_host, res_type)
                 else:
-                    sub_link_list=[]
+                    sub_link_list = []
                 for sub_link in sub_link_list:
                     if not (sub_link[0] in self.url_set):
                         self.url_set.add((sub_link[0]))
@@ -152,7 +161,7 @@ class WORKER(threading.Thread):
     def save(self, data):
         if not data:
             return
-        found_keys=[]
+        found_keys = []
         for key in self.key_list:
             if data.find(key) > 0:
                 found_keys.append(key)
@@ -169,17 +178,17 @@ class WORKER(threading.Thread):
     def get_sub_links(self, data, res_type, res_host):
         if not data:
             return []
-        host=res_type + '://' + res_host
+        host = res_type + '://' + res_host
         try:
-            data=data.decode('utf8', 'ignore')
-            doc=lxml.html.document_fromstring(data)
+            data = data.decode('utf8', 'ignore')
+            doc = lxml.html.document_fromstring(data)
         except Exception as e:
             logging.critical(str(e))
-        tags=['a', 'iframe', 'frame']
+        tags = ['a', 'iframe', 'frame']
         doc.make_links_absolute(host)
-        links=doc.iterlinks()
-        new_link_list=[]
-        absolute_Link_list=[]
+        links = doc.iterlinks()
+        new_link_list = []
+        absolute_Link_list = []
         for l in links:
             if l[0].tag in tags:
                 new_link_list.append(l)
@@ -196,18 +205,18 @@ class WORKER(threading.Thread):
 class THREAD_POOL:
 
     def __init__(self, num, event, url, depth, key_word_list, database):
-        self.num=num
-        self.event=event
-        self.threads=[]
-        self.task_queue=Queue.Queue()
+        self.num = num
+        self.event = event
+        self.threads = []
+        self.task_queue = Queue.Queue()
         self.task_queue.put((url, depth))
-        self.key_list=key_word_list
-        self.url_set=set()
+        self.key_list = key_word_list
+        self.url_set = set()
         self.url_set.add(url)
-        self.md5_set=set()
-        self.saved_count=Queue.Queue()
+        self.md5_set = set()
+        self.saved_count = Queue.Queue()
         for i in range(self.num):
-            new_thread=WORKER( 
+            new_thread = WORKER(
                 links=self.task_queue,
                 keys=self.key_list,
                 rlock=rlock,
@@ -217,7 +226,6 @@ class THREAD_POOL:
                 saved_count=self.saved_count)
             self.threads.append(new_thread)
         logging.info(" pool init done, " + str(self.num) + " woreker created")
-
 
     def show_percent(self):
         # Description : show progress every 0.5 second and check the global variable IS_EXIT
@@ -233,12 +241,12 @@ class THREAD_POOL:
                     logging.critical(str(e))
                 return
             time.sleep(0.5)
-            now=self.task_queue.qsize()
-            total=len(self.url_set)
-            percent=(float(now) / float(total))
-            percent=int((1 - percent) * 100)
-            bar=ProgressBar(widgets=[Percentage(), Bar()],
-                       maxval=100).start()
+            now = self.task_queue.qsize()
+            total = len(self.url_set)
+            percent = (float(now) / float(total))
+            percent = int((1 - percent) * 100)
+            bar = ProgressBar(widgets=[Percentage(), Bar()],
+                              maxval=100).start()
             bar.update(percent)
         sys.stdout.write('\n')
         print self.saved_count.qsize(), "pages saved. All tasks done at", time.ctime()
@@ -250,38 +258,38 @@ class testSameDB(threading.Thread):
 
     def __init__(self, database, md5, progress):
         threading.Thread.__init__(self)
-        self.db=database
-        self.count=0
-        self.md5=md5
-        self.progress=progress
+        self.db = database
+        self.count = 0
+        self.md5 = md5
+        self.progress = progress
         self.start()
 
     def run(self):
         while True:
                 # get 10,000 contents each time
-            contents=self.db.execute('select content from spider limit %s,%s'
-                           % (self.count, self.count + 10000))
+            contents = self.db.execute('select content from spider limit %s,%s'
+                                       % (self.count, self.count + 10000))
             self.count += 10000
             if len(contents) == 0:
                 break
             for c in contents:
-                res=hashlib.md5(c[0].encode('utf8'))
+                res = hashlib.md5(c[0].encode('utf8'))
                 self.md5.add(res.hexdigest())
-                self.progress[0]=self.count
+                self.progress[0] = self.count
 
 
 # checke if there are duplicate pages in database(by MD5)
 def test(database):
-    progress=[0]
-    md5=set()
+    progress = [0]
+    md5 = set()
     # get count of all pages in database.
-    total_num=database.count() 
+    total_num = database.count()
     if total_num is 0:
         logging.warning("0 content in database")
         return
-    t=testSameDB(database, md5, progress)
+    t = testSameDB(database, md5, progress)
     t.join()
-    pBar=ProgressBar(widgets=[Percentage(), Bar()],
+    pBar = ProgressBar(widgets=[Percentage(), Bar()],
                        maxval=total_num).start()
     while progress[0] < total_num:
         pBar.update(progress[0] + 1)
@@ -292,15 +300,15 @@ def test(database):
         print('duplicate pages found in database')
 
 
-def main_handler(argvs,logging):
-    db=DATABASE(argvs['--dbfile'],logging)
-    event=threading.Event()
+def main_handler(argvs, logging):
+    db = DATABASE(argvs['--dbfile'], logging)
+    event = threading.Event()
     event.clear()
-    pool=THREAD_POOL(
+    pool = THREAD_POOL(
         num=argvs['--thread'],
         event=event,
         url=argvs['-u'],
-        depth=argvs['-d']-1,
+        depth=argvs['-d'] - 1,
         key_word_list=argvs['<Keyword>'],
         database=db)
     pool.show_percent()
@@ -310,20 +318,20 @@ def main_handler(argvs,logging):
 
 if __name__ == '__main__':
 
-    arguments=docopt(__doc__, version='0.1')
+    arguments = docopt(__doc__, version='0.1')
     try:
-        arguments['-l']=int(arguments['-l'])
-        arguments['-d']=int(arguments['-d'])
-        arguments['--thread']=int(arguments['--thread'])
-        
+        arguments['-l'] = int(arguments['-l'])
+        arguments['-d'] = int(arguments['-d'])
+        arguments['--thread'] = int(arguments['--thread'])
+
     except:
         print "-l,-d,--thread must be numbers"
         sys.exit()
     argv_check(arguments)
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
-    rlock=threading.RLock()
-    logLevel={
+    rlock = threading.RLock()
+    logLevel = {
         1: logging.CRITICAL,
         2: logging.ERROR,
         3: logging.WARNING,
@@ -337,4 +345,4 @@ if __name__ == '__main__':
         '%(threadName)s-%(message)s',
         datefmt='[%d/%b/%Y %H:%M:%S]',
     )
-    main_handler(arguments,logging)
+    main_handler(arguments, logging)
