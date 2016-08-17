@@ -50,22 +50,19 @@ from progressbar import *
 
 IS_EXIT = False
 
-# Description : chang global variable IS_EXIT.
-
 
 def handler(signum, frame):
+    # Description : chang global variable IS_EXIT.
     global IS_EXIT
     IS_EXIT = True
 
-# Description : send request to url,return contentof response.
 
+def request_url(url):
+# Description : send request to url,return contentof response.
 # Output :
 #     req.get_type()
 #     req.get_host()
 #     content
-
-
-def request_url(url):
     req = urllib2.Request(url)
     req.add_header(
         'User-Agent',
@@ -82,16 +79,15 @@ def request_url(url):
     except Exception as e:
         logging.warning(' open[' + url + '] failed ' + str(e))
         return req.get_type(), req.get_host(), False
+
+
+def init_data_base(database):
 # Description : init database file create table(if necessary)
 # Input:
 #     dbFile: Name of the Database file
 # Output:
 #     db: A sqlite3 connection obejct
 #     c: A cursor from db
-
-
-def init_data_base(database):
-
     exist = False
     files = os.listdir('.')
     if database in files:
@@ -107,10 +103,9 @@ def init_data_base(database):
             logging.cratical(database + 'Error in creating table')
     return db, c
 
-# Description : insert data to database
-
 
 def insert_data(url, key_word, content, saved_count):
+# Description : insert data to database
     content = urllib2.quote(str(content))
     try:
         c.execute('insert into spider(url,key,content) values("'
@@ -120,24 +115,39 @@ def insert_data(url, key_word, content, saved_count):
     except sqlite3.OperationalError:
         logging.critical(' insert [' + url + '] error')
 
+
+def argv_check(argvs):
+# Description : check user input, exit if illegal
+    if (not 0 < argvs['-l'] < 6):
+        print '-l must be in [1,2,3,4,5]'
+        sys.exit()
+    elif argvs['-d'] < 1:
+        print '-d must larger than 0'
+        sys.exit()
+    elif argvs['--thread'] < 1:
+        print '--thread must larger than 0'
+        sys.exit()
+    elif not argvs['-u']:
+        print 'Please input root url as -u'
+        sys.exit()
+
+
 # Description : WORKER: search and save pages
-
-
 class WORKER(threading.Thread):
 
     def __init__(self, links, keys, rlock, url_set, md5_set, saved_count):
         threading.Thread.__init__(self)
-        self.task_queue = links
-        self.key_list = keys
-        self.rlock = rlock
-        self.link = None
-        self.depth = None
+        self.task_queue=links
+        self.key_list=keys
+        self.rlock=rlock
+        self.link=None
+        self.depth=None
         self.setDaemon(True)
         self.start()
-        self.url_set = url_set
-        self.md5_set = md5_set
-        self.count = 0
-        self.saved_count = saved_count
+        self.url_set=url_set
+        self.md5_set=md5_set
+        self.count=0
+        self.saved_count=saved_count
 
 #    Description : 1.get task from task queue.
 #                   2.get sub links
@@ -145,22 +155,22 @@ class WORKER(threading.Thread):
     def run(self):
         while True:
             try:
-                self.link, self.depth = self.task_queue.get(timeout=2)
+                self.link, self.depth=self.task_queue.get(timeout=2)
             except Exception as e:
                 logging.info("get task error")
                 break
             try:
-                res_host, res_type, data = request_url(self.link)
+                res_host, res_type, data=request_url(self.link)
                 if not data:
                     self.task_queue.task_done()
                     continue
                 self.count += 1
-                md5 = hashlib.md5(data).hexdigest()
+                md5=hashlib.md5(data).hexdigest()
                 if self.depth > 0:
                     self.depth -= 1
-                    sub_link_list = self.getLinks(data, res_host, res_type)
+                    sub_link_list=self.getLinks(data, res_host, res_type)
                 else:
-                    sub_link_list = []
+                    sub_link_list=[]
                 for sub_link in sub_link_list:
                     if not (sub_link[0] in self.url_set):
                         self.url_set.add((sub_link[0]))
@@ -188,17 +198,17 @@ class WORKER(threading.Thread):
     def getLinks(self, data, res_type, res_host):
         if not data:
             return []
-        host = res_type + '://' + res_host
+        host=res_type + '://' + res_host
         try:
-            data = data.decode('utf8', 'ignore')
-            doc = lxml.html.document_fromstring(data)
+            data=data.decode('utf8', 'ignore')
+            doc=lxml.html.document_fromstring(data)
         except Exception as e:
             logging.critical(str(e))
-        tags = ['a', 'iframe', 'frame']
+        tags=['a', 'iframe', 'frame']
         doc.make_links_absolute(host)
-        links = doc.iterlinks()
-        new_link_list = []
-        absolute_Link_list = []
+        links=doc.iterlinks()
+        new_link_list=[]
+        absolute_Link_list=[]
         for l in links:
             if l[0].tag in tags:
                 new_link_list.append(l)
@@ -215,18 +225,18 @@ class WORKER(threading.Thread):
 class THREAD_POOL:
 
     def __init__(self, num, event, url, depth, key_word_list):
-        self.num = num
-        self.event = event
-        self.threads = []
-        self.task_queue = Queue.Queue()
+        self.num=num
+        self.event=event
+        self.threads=[]
+        self.task_queue=Queue.Queue()
         self.task_queue.put((url, depth))
-        self.key_list = key_word_list
-        self.url_set = set()
+        self.key_list=key_word_list
+        self.url_set=set()
         self.url_set.add(url)
-        self.md5_set = set()
-        self.saved_count = Queue.Queue()
+        self.md5_set=set()
+        self.saved_count=Queue.Queue()
         for i in range(self.num):
-            new_thread = WORKER(
+            new_thread=WORKER(
                 self.task_queue,
                 self.key_list,
                 rlock,
@@ -248,12 +258,12 @@ class THREAD_POOL:
                 except Exception as e:
                     logging.critical(str(e))
                 return
-            width = 50
-            now = self.task_queue.qsize()
-            total = len(self.url_set)
-            percent = (float(now) / float(total))
-            percent = int((1 - percent) * 100)
-            info = ('[%%-%ds' % width) % (width * percent / 100 * '=')
+            width=50
+            now=self.task_queue.qsize()
+            total=len(self.url_set)
+            percent=(float(now) / float(total))
+            percent=int((1 - percent) * 100)
+            info=('[%%-%ds' % width) % (width * percent / 100 * '=')
             info += '] ' + str(percent) + "%    "
             info += str(len(self.url_set) - self.task_queue.qsize())
             info += '/' + str(len(self.url_set)) + '\r'
@@ -274,10 +284,10 @@ class testSameDB(threading.Thread):
 
     def __init__(self, cursor, md5, progress):
         threading.Thread.__init__(self)
-        self.c = cursor
-        self.count = 0
-        self.md5 = md5
-        self.progress = progress
+        self.c=cursor
+        self.count=0
+        self.md5=md5
+        self.progress=progress
         self.start()
 
     def run(self):
@@ -286,30 +296,30 @@ class testSameDB(threading.Thread):
             self.c.execute('select content from spider limit %s,%s'
                            % (self.count, self.count + 10000))
             self.count += 10000
-            contents = self.c.fetchall()
+            contents=self.c.fetchall()
             if len(contents) == 0:
                 break
             for c in contents:
-                res = hashlib.md5(c[0].encode('utf8'))
+                res=hashlib.md5(c[0].encode('utf8'))
                 self.md5.add(res.hexdigest())
-                self.progress[0] = self.count
+                self.progress[0]=self.count
 
 
 # checke if there are duplicate pages in database(by MD5)
 def test(dbFile):
-    progress = [0]
-    md5 = set()
+    progress=[0]
+    md5=set()
     # get count of all pages in database.
-    db = sqlite3.connect(dbFile, check_same_thread=False)
-    c = db.cursor()
+    db=sqlite3.connect(dbFile, check_same_thread=False)
+    c=db.cursor()
     c.execute('select count(*) from spider')
-    total_num = c.fetchall()[0][0]
+    total_num=c.fetchall()[0][0]
     if total_num is 0:
         logging.warning("0 content in database")
         return
-    t = testSameDB(c, md5, progress)
+    t=testSameDB(c, md5, progress)
     t.join()
-    pBar = ProgressBar(widgets=[Percentage(), Bar()],
+    pBar=ProgressBar(widgets=[Percentage(), Bar()],
                        maxval=total_num).start()
     while progress[0] < total_num:
         pBar.update(progress[0] + 1)
@@ -321,9 +331,9 @@ def test(dbFile):
 
 
 def main_handler(thread_num, url, depth, key_word_list, is_test):
-    event = threading.Event()
+    event=threading.Event()
     event.clear()
-    pool = THREAD_POOL(
+    pool=THREAD_POOL(
         num=thread_num,
         event=event,
         url=url,
@@ -335,24 +345,22 @@ def main_handler(thread_num, url, depth, key_word_list, is_test):
 
 
 if __name__ == '__main__':
-    arguments = docopt(__doc__, version='0.1')
+    arguments=docopt(__doc__, version='0.1')
     try:
-        arguments['-l'] = int(arguments['-l'])
-        arguments['-d'] = int(arguments['-d'])
-        arguments['--thread'] = int(arguments['--thread'])
+        arguments['-l']=int(arguments['-l'])
+        arguments['-d']=int(arguments['-d'])
+        arguments['--thread']=int(arguments['--thread'])
+        
     except:
         print "-l,-d,--thread must be numbers"
         sys.exit()
+    argv_check(arguments)
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
-    rlock = threading.RLock()
-    if (not 0 < arguments['-l'] < 6) or (arguments['-d'] <
-                                         1) or (arguments['--thread'] < -100) or (not arguments['-u']):
-        print 'input error'
-        _usage()
-        exit()
-    db, c = init_data_base(arguments['--dbfile'])
-    logLevel = {
+    rlock=threading.RLock()
+
+    db, c=init_data_base(arguments['--dbfile'])
+    logLevel={
         1: logging.CRITICAL,
         2: logging.ERROR,
         3: logging.WARNING,
