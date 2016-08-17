@@ -1,13 +1,41 @@
 #!/usr/bin/env
 # -*- coding: utf-8 -*-
 # __author__ = 'QY-Y'
+"""Spider.
+
+Usage:
+  spider.py [-u <URL>]
+            [<Keyword> <Keyword>...]
+            [-d <Depth>]
+            [--testself]
+            [-f <LogFile>]
+            [-l <Level>]
+            [--thread <ThreadNumber>]
+            [--dbfile <DatabaseFileName>]
+  spider.py (-h | --help)
+  spider.py --version
+
+Options:
+  -h --help     Show this screen.
+  --version     Show version.
+  -d <Depth>    Depth of the spider.                                [default: 1].
+  --testself    Test module                                         [default: False]
+  -f <LogFile>  Name/Path of the log file.                          [default: spider.log]
+  -l <Level>    How detailed the logging should be(1/less-5/more).  [default: 1]
+  --thread <ThreadNumber>                                           [default: 10]
+  --dbfile <DatabaseFileName>                                       [default: spider.db]
+
+Description:
+  -u <URL> Root URL.
+  <Keyword> Keyword list, split by ' '.
+"""
 
 import os
 import time
 import sys
 import Queue
 import re
-import getopt
+from docopt import docopt
 import logging
 import threading
 import signal
@@ -22,17 +50,21 @@ from progressbar import *
 
 IS_EXIT = False
 
-# Description : chang global variable IS_EXIT. 
+# Description : chang global variable IS_EXIT.
+
+
 def handler(signum, frame):
     global IS_EXIT
     IS_EXIT = True
 
-# Description : send request to url,return contentof response. 
+# Description : send request to url,return contentof response.
 
-# Output : 
+# Output :
 #     req.get_type()
 #     req.get_host()
 #     content
+
+
 def request_url(url):
     req = urllib2.Request(url)
     req.add_header(
@@ -56,8 +88,10 @@ def request_url(url):
 # Output:
 #     db: A sqlite3 connection obejct
 #     c: A cursor from db
+
+
 def init_data_base(database):
-   
+
     exist = False
     files = os.listdir('.')
     if database in files:
@@ -73,7 +107,9 @@ def init_data_base(database):
             logging.cratical(database + 'Error in creating table')
     return db, c
 
-# Description : insert data to database 
+# Description : insert data to database
+
+
 def insert_data(url, key_word, content, saved_count):
     content = urllib2.quote(str(content))
     try:
@@ -84,7 +120,9 @@ def insert_data(url, key_word, content, saved_count):
     except sqlite3.OperationalError:
         logging.critical(' insert [' + url + '] error')
 
-# Description : WORKER: search and save pages 
+# Description : WORKER: search and save pages
+
+
 class WORKER(threading.Thread):
 
     def __init__(self, links, keys, rlock, url_set, md5_set, saved_count):
@@ -146,6 +184,7 @@ class WORKER(threading.Thread):
                 self.rlock.release()
                 break
 #    Description : get sub links,returns a list
+
     def getLinks(self, data, res_type, res_host):
         if not data:
             return []
@@ -169,7 +208,10 @@ class WORKER(threading.Thread):
                 absolute_Link_list.append((link[2], self.depth))
         return absolute_Link_list
 
-# Description : manage the task queue and the thread pool,meanwhile show progress
+# Description : manage the task queue and the thread pool,meanwhile show
+# progress
+
+
 class THREAD_POOL:
 
     def __init__(self, num, event, url, depth, key_word_list):
@@ -195,6 +237,7 @@ class THREAD_POOL:
         logging.info(" pool init done, " + str(self.num) + " woreker created")
 # Description : show progress every 0.5 second and check the global variable IS_EXIT
 #           return if IS_EXIT is true or all tasks is done.
+
     def show_percent(self):
         global IS_EXIT
         while self.task_queue.unfinished_tasks:
@@ -225,7 +268,6 @@ class THREAD_POOL:
         print self.saved_count.qsize(), "pages saved. All tasks done at", time.ctime()
         self.event.set()
         return
-
 
 
 class testSameDB(threading.Thread):
@@ -276,23 +318,6 @@ def test(dbFile):
         print('no duplicate pages found in database')
     else:
         print('duplicate pages found in database')
-# Description : print usage
-def _usage():
-
-
-    msg = '''usage:
-python spider.py -u [URL] -d [Depth] -f [Log File] -l [Level] --thread [Thread Number] \
---dbfile [Database File Name] --key [Key Word]
--u  Begining URL ,must start with http or https
--d  The depth of the spider ,defalut: [1]
--f  Name(path) of the log file ,default: [spider.log]
--l  How detailed the logging should be(1-5), default: [1]
---thread  The capability of the threading pool, default: [10]
---dbfile  Name of the database file, default: [spider.db]
---key (Optional) Key word
---testself (Optional) Test module
--h  Print this page'''
-    print msg
 
 
 def main_handler(thread_num, url, depth, key_word_list, is_test):
@@ -305,56 +330,28 @@ def main_handler(thread_num, url, depth, key_word_list, is_test):
         depth=depth,
         key_word_list=key_word_list)
     pool.show_percent()
-    if is_test:  
+    if is_test:
         test(dbFile)
 
 
 if __name__ == '__main__':
-    print time.ctime()
+    arguments = docopt(__doc__, version='0.1')
+    try:
+        arguments['-l'] = int(arguments['-l'])
+        arguments['-d'] = int(arguments['-d'])
+        arguments['--thread'] = int(arguments['--thread'])
+    except:
+        print "-l,-d,--thread must be numbers"
+        sys.exit()
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
     rlock = threading.RLock()
-    url = None
-    depth = 1
-    logFile = 'spider.log'
-    level = 1
-    thread_num = 1
-    dbFile = 'spider.db'
-    key_list = ['HTML5']
-    if '--testself' in sys.argv:
-        is_test = True
-        sys.argv.remove('--testself')
-        os.system('rm spider.log spider.db')
-    else:
-        is_test = False
-    optlist, args = getopt.getopt(
-        sys.argv[1:],
-        'u:d:f:l:h',
-        ['thread=', 'dbfile=', 'key=','testself='])
-    for k, v in optlist:
-        if k == '-u':
-            url = v
-        elif k == '-d':
-            depth = int(v)
-        elif k == '-f':
-            logFile = v
-        elif k == '-l':
-            level = int(v)
-        elif k == '--thread':
-            threadNum = int(v)
-        elif k == '--dbfile':
-            dbFile = v
-        elif k == '--key':
-            key_list = v
-        elif k == '-h':
-            _usage()
-            exit()
-
-    if (not 0 < level < 6) or (depth < 1) or (thread_num < -100) or (not url):
+    if (not 0 < arguments['-l'] < 6) or (arguments['-d'] <
+                                         1) or (arguments['--thread'] < -100) or (not arguments['-u']):
         print 'input error'
         _usage()
         exit()
-    db, c = init_data_base(dbFile)
+    db, c = init_data_base(arguments['--dbfile'])
     logLevel = {
         1: logging.CRITICAL,
         2: logging.ERROR,
@@ -363,10 +360,15 @@ if __name__ == '__main__':
         5: logging.DEBUG,
     }
     logging.basicConfig(
-        filename=logFile,
-        level=logLevel[level],
+        filename=arguments['-f'],
+        level=arguments['-l'],
         format='%(asctime)s-%(levelname)s-%(filename)s-'
         '%(threadName)s-%(message)s',
         datefmt='[%d/%b/%Y %H:%M:%S]',
     )
-    main_handler(thread_num, url, depth - 1, key_list, is_test)
+    main_handler(
+        arguments['--thread'],
+        arguments['-u'],
+        arguments['-d'] - 1,
+        arguments['<Keyword>'],
+        arguments['--testself'])
