@@ -24,7 +24,6 @@ class DATABASE:
 
     def insert(self, url, key_word, content):
         # Description : insert data to database
-        #
         try:
             self.c.execute('insert into spider(url,key,content) values("'
                            + url + '","' + key_word + '","' + content + '")')

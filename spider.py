@@ -165,7 +165,7 @@ class WORKER(threading.Thread):
         for key in self.key_list:
             if data.find(key) > 0:
                 found_keys.append(key)
-        if len(found_keys) > 0:
+        if len(found_keys) > 0 or (len(self.key_list) is 0):
             logging.info(str(found_keys) + " found in [" + self.link + "]")
             content = urllib2.quote(str(data))
             self.rlock.acquire()
